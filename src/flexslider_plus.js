@@ -1,2 +1,3 @@
 import './scripts/index';
-import './style/flexslider_plus.scss';
+
+import './style/style.scss';
