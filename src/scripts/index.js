@@ -1795,34 +1795,40 @@ window.onfocus = () => {
 } )( jQuery );
 
 window.onload = () => {
-	const sliders = document.querySelectorAll( '.woocommerce-product-gallery' );
+	const sliders = document.querySelectorAll( '.flexslider-plus' );
 
 	return sliders.forEach( ( slider ) => {
 		// get the slides
-		const selector = slider.options.selector
-			? slider.options.selector
-			: '.slides > li';
-		const slides = slider.querySelector( selector );
-
-		// the slider has a single item
+		const selector =
+			slider.options && slider.options.selector
+				? slider.options.selector
+				: '.slides li';
+		const slides = slider.querySelectorAll( selector );
 		if (
-			( slides.length === 1 && slider.options.allowOneSlide === false ) ||
+			typeof slider.options === 'undefined' ||
+			slider.options.allowOneSlide === true ||
 			slides.length === 0
 		) {
+			// if the slider has no options set initialize it
+			slider.flexslider = ( options = {} ) => {
+				new flexslider( slider, options );
+			};
+		} else {
+			// the slider has a single item
+			// TODO: check the allowOneSlide option
 			// slider.fadeIn( 0 );
 			// TODO: show the images slides if not displayed or hidden
-			if ( typeof slider.options.start === 'function' ) {
-				slider.options.start( slider );
-			}
-		} else if ( slider.options === undefined ) {
-			// if the slider has no options set initialize it
-			new flexslider( slider, slider.options );
+			// if ( slider.options.start ) {
+			// 	slider.options.start( slider );
+			// }
 		}
 	} );
 };
 
 //FlexSlider: Plugin Function
 window.flexsliderApi = function ( options ) {
+	// TODO: for each slider collected add to flexsliderApi the object. i guess in this way we don't even need to provide the shortcuts below
+
 	if ( options.slider === undefined || typeof options !== 'object' ) {
 		options = {};
 	}
