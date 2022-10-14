@@ -8,15 +8,19 @@ import { defaults } from './defaults';
 let focused = true;
 
 class flexslider {
-	constructor( el, options ) {
+	constructor( el, options = {} ) {
+		console.log( el, options );
+
 		this.options = this.initOptions( options );
 
 		// the slider element
 		this.slider =
-			document.querySelector( el ) || this.throwError( 'cannot find ' );
+			document.querySelector( el.selector ) ||
+			this.throwError( 'cannot find ' + el );
 
 		this.namespace = this.options.namespace;
-		this.touch = 'ontouchstart' in window && this.options.touch ? {} : false;
+		this.touch =
+			'ontouchstart' in window && this.options.touch ? {} : false;
 		this.eventType = 'click touchend keyup';
 		this.watchedEvent = '';
 		this.vertical = this.options.direction === 'vertical';
@@ -24,6 +28,10 @@ class flexslider {
 		this.carousel = this.options.itemWidth > 0;
 		this.fade = this.options.animation === 'fade';
 		this.asNav = this.options.asNavFor !== '';
+
+		this.asNav = {};
+		this.controlNav = {};
+		this.directionNav = {};
 
 		//FlexSlider: Initialize on load
 		this.init();
@@ -1778,6 +1786,13 @@ window.onblur = () => {
 window.onfocus = () => {
 	focused = true;
 };
+
+// Compat with the old jquery initialization
+( function ( $ ) {
+	$.fn.flexslider = function ( el, args ) {
+		return new flexslider( el, args );
+	};
+} )( jQuery );
 
 window.onload = () => {
 	const sliders = document.querySelectorAll( '.woocommerce-product-gallery' );
