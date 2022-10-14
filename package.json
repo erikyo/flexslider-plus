@@ -1,0 +1,44 @@
+{
+  "name": "flexslider-plus",
+  "version": "1.0.0",
+  "author": "Erik",
+  "license": "GPL-2.0-or-later",
+  "main": "build/index.js",
+  "files": [
+    "build/*",
+    "FlexSliderPlus.php",
+    "LICENSE.md",
+    "readme.txt"
+  ],
+  "keywords": [
+    "wordpress",
+    "gutenberg",
+    "editor",
+    "blocks"
+  ],
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start",
+    "format": "wp-scripts format",
+    "lint:css": "wp-scripts lint-style",
+    "lint:js": "wp-scripts lint-js",
+    "packages-update": "wp-scripts packages-update",
+    "plugin-zip": "wp-scripts plugin-zip",
+    "docGen": "jsdoc -c jsdoc.conf.json"
+  },
+  "dependencies": {
+    "@wordpress/scripts": "^24.3.0"
+  },
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.9.0 <7"
+  },
+  "eslintConfig": {
+    "extends": [
+      "plugin:@wordpress/eslint-plugin/recommended"
+    ]
+  },
+  "browserslist": [
+    "extends @wordpress/browserslist-config"
+  ]
+}
