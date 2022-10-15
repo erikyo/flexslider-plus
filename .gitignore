@@ -1,4 +1,7 @@
 ### Node template
+# Output of `wp-scripts plugin-zip`
+*.zip
+
 # Logs
 logs
 *.log
@@ -116,3 +119,5 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+# intellj
+.idea/
