@@ -4,39 +4,469 @@
  * Contributing Author: Tyler Smith, Erik
  */
 import { defaults } from './defaults';
+import { hasTouch } from './compat';
 
 let focused = true;
 
+export function throwError( message ) {
+	throw new Error( 'Flexslider: ' + message );
+}
+
+class controlNav {
+	setup() {
+		if ( this.slider.manualControls ) {
+			// MANUALCONTROLS:
+			this.setupManual();
+		} else {
+			this.setupPaging();
+		}
+	}
+
+	setupPaging() {
+		let type =
+				this.options.controlNav === 'thumbnails'
+					? 'control-thumbs'
+					: 'control-paging',
+			j = 1,
+			item,
+			slide;
+
+		this.slider.controlNavScaffold = $(
+			'<ol class="' +
+				this.namespace +
+				'control-nav ' +
+				this.namespace +
+				type +
+				'"></ol>'
+		);
+
+		if ( this.slider.pagingCount > 1 ) {
+			for ( let i = 0; i < this.slider.pagingCount; i++ ) {
+				slide = this.slider.slides.eq( i );
+
+				if ( undefined === slide.attr( 'data-thumb-alt' ) ) {
+					slide.attr( 'data-thumb-alt', '' );
+				}
+
+				item = $( '<a></a>' ).attr( 'href', '#' ).text( j );
+				if (
+					this.options.controlNav === 'thumbnails' &&
+					this.options.manualControls === ''
+				) {
+					item = $( '<img/>', {
+						Width: this.slider.navItemSize,
+						Height: this.slider.navItemSize,
+						src: slide.attr( 'data-thumb' ),
+						srcset: `${ slide.attr( 'data-thumb' ) } ${ Math.round(
+							this.slider.w / this.slider.navItemSize
+						) }w, ${ slide
+							.find( 'img' )
+							.attr( 'src' ) } ${ Math.round( this.slider.w ) }w`,
+						sizes: `(max-width: ${ Math.round(
+							this.slider.w
+						) }px) 100vw, ${ Math.round( this.slider.w ) }px`,
+						alt: slide.attr( 'alt' ),
+					} );
+				} else {
+					item = $( '<img/>', {
+						Width: this.slider.navItemSize,
+						Height: this.slider.navItemSize,
+						src: slide.attr( 'data-thumb' ),
+						alt: slide.attr( 'alt' ),
+					} );
+				}
+
+				if ( '' !== slide.attr( 'data-thumb-alt' ) ) {
+					item.attr( 'alt', slide.attr( 'data-thumb-alt' ) );
+				}
+
+				if (
+					'thumbnails' === this.options.controlNav &&
+					true === this.options.thumbCaptions
+				) {
+					const captn = slide.attr( 'data-thumbcaption' );
+					if ( '' !== captn && undefined !== captn ) {
+						const caption = $( '<span></span>' )
+							.addClass( this.namespace + 'caption' )
+							.text( captn );
+						item.append( caption );
+					}
+				}
+
+				const liElement = $( '<li>' );
+				item.appendTo( liElement );
+				liElement.append( '</li>' );
+
+				this.slider.controlNavScaffold.append( liElement );
+				j++;
+			}
+		}
+
+		// CONTROLSCONTAINER:
+		this.slider.controlsContainer
+			? $( this.slider.controlsContainer ).append(
+					this.slider.controlNavScaffold
+			  )
+			: this.slider.append( slider.controlNavScaffold );
+		this.controlNav.set();
+
+		this.controlNav.active();
+
+		this.slider.controlNavScaffold.on(
+			this.eventType,
+			'a, img',
+			function ( event ) {
+				event.preventDefault();
+
+				if (
+					this.watchedEvent === '' ||
+					this.watchedEvent === event.type
+				) {
+					const $this = $( this ),
+						target = this.slider.controlNav.index( $this );
+
+					if ( ! $this.hasClass( this.namespace + 'active' ) ) {
+						this.slider.direction =
+							target > this.slider.currentSlide ? 'next' : 'prev';
+						this.flexAnimate( target, this.options.pauseOnAction );
+					}
+				}
+
+				// setup flags to prevent event duplication
+				if ( this.watchedEvent === '' ) {
+					this.watchedEvent = event.type;
+				}
+				this.setToClearWatchedEvent();
+			}
+		);
+	}
+
+	setupManual() {
+		this.slider.controlNav = this.slider.manualControls;
+		this.controlNav.active();
+
+		this.slider.controlNav.on( this.eventType, function ( event ) {
+			event.preventDefault();
+
+			if (
+				this.watchedEvent === '' ||
+				this.watchedEvent === event.type
+			) {
+				const $this = $( this ),
+					target = this.slider.controlNav.index( $this );
+
+				if ( ! $this.hasClass( this.namespace + 'active' ) ) {
+					target > this.slider.currentSlide
+						? ( this.slider.direction = 'next' )
+						: ( this.slider.direction = 'prev' );
+					this.flexAnimate( target, this.options.pauseOnAction );
+				}
+			}
+
+			// setup flags to prevent event duplication
+			if ( this.watchedEvent === '' ) {
+				this.watchedEvent = event.type;
+			}
+			this.setToClearWatchedEvent();
+		} );
+	}
+
+	set() {
+		const selector = this.options.controlNav === 'thumbnails' ? 'img' : 'a';
+		this.slider.controlNav = $(
+			'.' + this.namespace + 'control-nav li ' + selector,
+			this.slider.controlsContainer
+				? this.slider.controlsContainer
+				: this.slider
+		);
+	}
+
+	active() {
+		this.slider.controlNav
+			.removeClass( this.namespace + 'active' )
+			.eq( this.animatingTo )
+			.addClass( this.namespace + 'active' );
+	}
+
+	update( action, pos ) {
+		if ( this.slider.pagingCount > 1 && action === 'add' ) {
+			this.slider.controlNavScaffold.append(
+				$( '<li><a href="#">' + this.slider.count + '</a></li>' )
+			);
+		} else if ( this.slider.pagingCount === 1 ) {
+			this.slider.controlNavScaffold.find( 'li' ).remove();
+		} else {
+			this.slider.controlNav.eq( pos ).closest( 'li' ).remove();
+		}
+		this.controlNav.set();
+		this.slider.pagingCount > 1 &&
+		this.slider.pagingCount !== this.slider.controlNav.length
+			? this.update( pos, action )
+			: this.controlNav.active();
+	}
+}
+
+class asNav {
+	setup() {
+		this.slider.asNav = true;
+		this.slider.animatingTo = Math.floor(
+			this.slider.currentSlide / this.slider.move
+		);
+		this.slider.currentItem = this.slider.currentSlide;
+		this.slider.slides.classList.remove( this.namespace + 'active-slide' );
+		this.slider.slides[ this.slider.currentItem ].classList.add(
+			this.namespace + 'active-slide'
+		);
+
+		this.slider.slides.on( this.eventType, function ( e ) {
+			e.preventDefault();
+			const $slide = $( this ),
+				target = $slide.index();
+			let posFromX;
+			if ( this.options.rtl ) {
+				posFromX =
+					-1 *
+					( $slide.offset().right - $( this.slider ).scrollLeft() ); // Find position of slide relative to right of slider container
+			} else {
+				posFromX = $slide.offset().left - $( this.slider ).scrollLeft(); // Find position of slide relative to left ofthis.slider container
+			}
+			if (
+				posFromX <= 0 &&
+				$slide.hasClass( this.namespace + 'active-slide' )
+			) {
+				this.flexAnimate( this.getTarget( 'prev' ), true );
+			} else if (
+				! $( this.options.asNavFor ).data( 'flexslider' ).animating &&
+				! $slide.hasClass( this.namespace + 'active-slide' )
+			) {
+				this.slider.direction =
+					this.slider.currentItem < target ? 'next' : 'prev';
+				this.flexAnimate(
+					target,
+					this.options.pauseOnAction,
+					false,
+					true,
+					true
+				);
+			}
+		} );
+	}
+}
+
+class pausePlay {
+	setup() {
+		const pausePlayScaffold = $(
+			'<div class="' +
+				this.namespace +
+				'pauseplay"><a href="#"></a></div>'
+		);
+
+		// CONTROLSCONTAINER:
+		if ( this.slider.controlsContainer ) {
+			this.slider.controlsContainer.append( pausePlayScaffold );
+			this.slider.pausePlay = $(
+				'.' + this.namespace + 'pauseplay a',
+				this.slider.controlsContainer
+			);
+		} else {
+			this.append( pausePlayScaffold );
+			this.slider.pausePlay = $(
+				'.' + this.namespace + 'pauseplay a',
+				this.slider
+			);
+		}
+
+		this.pausePlay.update(
+			this.options.slideshow
+				? this.namespace + 'pause'
+				: this.namespace + 'play'
+		);
+
+		this.slider.pausePlay.on( this.eventType, function ( event ) {
+			event.preventDefault();
+
+			if (
+				this.watchedEvent === '' ||
+				this.watchedEvent === event.type
+			) {
+				if ( $( this ).hasClass( this.namespace + 'pause' ) ) {
+					this.slider.manualPause = true;
+					this.slider.manualPlay = false;
+					this.pause();
+				} else {
+					this.slider.manualPause = false;
+					this.slider.manualPlay = true;
+					this.slider.play();
+				}
+			}
+
+			// setup flags to prevent event duplication
+			if ( this.watchedEvent === '' ) {
+				this.watchedEvent = event.type;
+			}
+			this.setToClearWatchedEvent();
+		} );
+	}
+
+	update( state ) {
+		state === 'play'
+			? this.slider.pausePlay
+					.removeClass( this.namespace + 'pause' )
+					.addClass( this.namespace + 'play' )
+					.html( this.options.playText )
+			: this.slider.pausePlay
+					.removeClass( this.namespace + 'play' )
+					.addClass( this.namespace + 'pause' )
+					.html( this.options.pauseText );
+	}
+}
+
+class directionNav {
+	setup() {
+		const directionNavScaffold = $(
+			'<ul class="' +
+				this.namespace +
+				'direction-nav"><li class="' +
+				this.namespace +
+				'nav-prev"><a class="' +
+				this.namespace +
+				'prev" href="#">' +
+				this.options.prevText +
+				'</a></li><li class="' +
+				this.namespace +
+				'nav-next"><a class="' +
+				this.namespace +
+				'next" href="#">' +
+				this.options.nextText +
+				'</a></li></ul>'
+		);
+
+		// CUSTOM DIRECTION NAV:
+		if ( this.slider.customDirectionNav ) {
+			this.slider.directionNav = this.slider.customDirectionNav;
+			// CONTROLSCONTAINER:
+		} else if ( this.slider.controlsContainer ) {
+			$( this.slider.controlsContainer ).append( directionNavScaffold );
+			this.slider.directionNav = $(
+				'.' + this.namespace + 'direction-nav li a',
+				this.slider.controlsContainer
+			);
+		} else {
+			this.append( directionNavScaffold );
+			this.slider.directionNav = $(
+				'.' + this.namespace + 'direction-nav li a',
+				this.slider
+			);
+		}
+
+		this.directionNav.bind( this ).update();
+
+		this.slider.directionNav.addEventListener(
+			this.eventType,
+			function ( event ) {
+				event.preventDefault();
+				let target;
+
+				if (
+					this.watchedEvent === '' ||
+					this.watchedEvent === event.type
+				) {
+					target = this.classList.contains( this.namespace + 'next' )
+						? this.getTarget( 'next' )
+						: this.getTarget( 'prev' );
+					this.flexAnimate( target, this.options.pauseOnAction );
+				}
+
+				// setup flags to prevent event duplication
+				if ( this.watchedEvent === '' ) {
+					this.watchedEvent = event.type;
+				}
+				this.setToClearWatchedEvent();
+			}
+		);
+	}
+
+	update() {
+		console.log( 'updating...' );
+		const disabledClass = this.namespace + 'disabled';
+		if ( this.slider.pagingCount === 1 ) {
+			this.slider.directionNav
+				.addClass( disabledClass )
+				.attr( 'tabindex', '-1' );
+		} else if ( ! this.options.animationLoop ) {
+			if ( this.slider.animatingTo === 0 ) {
+				this.slider.directionNav
+					.removeClass( disabledClass )
+					.filter( '.' + this.namespace + 'prev' )
+					.addClass( disabledClass )
+					.attr( 'tabindex', '-1' );
+			} else if ( this.slider.animatingTo === this.slider.last ) {
+				this.slider.directionNav
+					.removeClass( disabledClass )
+					.filter( '.' + this.namespace + 'next' )
+					.addClass( disabledClass )
+					.attr( 'tabindex', '-1' );
+			} else {
+				this.slider.directionNav
+					.removeClass( disabledClass )
+					.prop( 'tabindex', '-1' );
+			}
+		} else {
+			this.slider.directionNav
+				.removeClass( disabledClass )
+				.prop( 'tabindex', '-1' );
+		}
+	}
+}
+
+/**
+ * @class flexslider
+ */
 class flexslider {
-	constructor( el, options = {} ) {
-		// the slider element
-		this.slider =
-			el || this.throwError( 'cannot find ' + options.selector );
+	/**
+	 * @param    {HTMLElement}    el           - the slider
+	 * @param    {defaults|false} options      - the slider options
+	 *
+	 * @property {HTMLElement}    slider       - the slider html element
+	 * @property {string}         namespace    - the name
+	 * @property {Object|false}   touch        - touch events enabled/disabled
+	 * @property {string}         eventType    - the events that fires changes
+	 * @property {boolean}        vertical     - the slide direction is vertical instead of horizontal (to not be confused with navigation bar that is always horizontal at the moment)
+	 * @property {boolean}        reverse      - the slider direction
+	 * @property {boolean}        carousel     - the slider options
+	 *
+	 * @property {Object}         asNav        - if is the navigation bar
+	 *
+	 * @property {Object}         controlNav   - the object that contain the controlNav
+	 * @property {Object}         directionNav - the object that contain the directionNav
+	 *
+	 *
+	 * @property {string}         watchedEvent - in the name of the event we are waiting for
+	 */
+	constructor( el, options = false ) {
+		this.slider = el || throwError( 'cannot find ' + options.selector );
 
-		this.options = this.initOptions( options );
-		console.log( this.options );
-
+		this.options = this.initOptions( options || {} );
 		this.namespace = this.options.namespace;
-		this.touch =
-			'ontouchstart' in window && this.options.touch ? {} : false;
+
+		this.touch = hasTouch && this.options.touch ? {} : false;
 		this.eventType = 'click touchend keyup';
-		this.watchedEvent = '';
-		this.vertical = this.options.direction === 'vertical';
 		this.reverse = this.options.reverse;
 		this.carousel = this.options.itemWidth > 0;
-		this.fade = this.options.animation === 'fade';
-		this.asNav = this.options.asNavFor !== '';
 
-		this.asNav = {};
-		this.controlNav = {};
-		this.directionNav = {};
+		// this.asNav = this.options.asNavFor !== '';
+		// TODO: 👇 pass the proper data to constructors, will avoid to bind this to classes
+		this.asNav = new asNav();
+		this.controlNav = new controlNav();
+		this.pausePlay = new pausePlay();
+		this.directionNav = new directionNav();
+
+		this.watchedEvent = '';
+
+		console.log( this.options );
 
 		//FlexSlider: Initialize on load
 		this.init();
-	}
-
-	throwError( message ) {
-		throw new Error( message );
 	}
 
 	initOptions( options ) {
@@ -62,15 +492,12 @@ class flexslider {
 			atEnd:
 				this.slider.currentSlide === 0 ||
 				this.slider.currentSlide === this.slider.last,
-			containerSelector: this.options.selector.substring(
-				0,
-				this.options.selector.search( ' ' )
+			containerSelector: this.options.selector.split( '>' ),
+			container: this.slider.querySelector(
+				this.options.selector.split( '>' )[ 0 ]
 			),
 			slides: this.slider.querySelectorAll( this.options.selector ),
 			count: this.slider.querySelectorAll( this.options.selector ).length,
-			container: this.slider.querySelector(
-				this.slider.containerSelector
-			),
 			itemsPerRow: parseInt( this.slider.dataset.columns ),
 			// SYNC:
 			syncExists: !! this.options.sync,
@@ -107,7 +534,7 @@ class flexslider {
 		// TOUCH/USECSS:
 		this.slider.transitions =
 			! this.options.video &&
-			! this.fade &&
+			! this.options.animation === 'fade' &&
 			this.options.useCSS &&
 			( function ( slider ) {
 				const obj = document.createElement( 'div' ),
@@ -160,12 +587,11 @@ class flexslider {
 		this.doMath();
 
 		// INIT
-		// TODO: removed because isn't useful at the moment (btw needs double check)
-		// this.slider.setup( 'init' );
+		this.setup( 'init' );
 
 		// CONTROLNAV:
 		if ( this.options.controlNav ) {
-			this.controlNav.setup();
+			this.controlNav.bind( this ).setup();
 		}
 
 		// DIRECTIONNAV:
@@ -176,36 +602,44 @@ class flexslider {
 		// KEYBOARD:
 		if (
 			this.options.keyboard &&
-			( $( this.slider.containerSelector ).length === 1 ||
+			// TODO: 👇 fix because it's a huge loss of time that isn't necessary
+			( this.slider.querySelector( this.slider.containerSelector )
+				.length > 0 ||
 				this.options.multipleKeyboard )
 		) {
-			$( document ).on( 'keyup', function ( event ) {
-				const keycode = event.keyCode;
-				if (
-					! this.slider.animating &&
-					( keycode === 39 || keycode === 37 )
-				) {
-					const target = this.options.rtl
-						? keycode === 37
-							? this.slider.getTarget( 'next' )
-							: keycode === 39
-							? this.slider.getTarget( 'prev' )
-							: false
-						: keycode === 39
-						? this.slider.getTarget( 'next' )
-						: function ( event, delta, deltaX, deltaY ) {
-								event.preventDefault();
-								const target =
-									delta < 0
-										? this.getTarget( 'next' )
-										: this.getTarget( 'prev' );
-								this.flexAnimate(
-									target,
-									slider.vars.pauseOnAction
-								);
-						  };
+			document.onkeyup = ( event ) => {
+				const keycode = event.key;
+				const reversed = this.options.rtl;
+				let target;
+
+				if ( ! this.slider.animating && keycode ) {
+					switch ( event.key ) {
+						case 'Right': // IE/Edge specific value
+						case 'ArrowRight':
+							target = this.slider.getTarget(
+								reversed ? 'next' : 'prev'
+							);
+							break;
+						case 'Left': // IE/Edge specific value
+						case 'ArrowLeft':
+							target = this.slider.getTarget(
+								reversed ? 'prev' : 'next'
+							);
+							break;
+						default:
+							target = function ( e, delta ) {
+								e.preventDefault();
+								if ( delta < 0 ) {
+									target = this.getTarget( 'next' );
+								} else {
+									target = this.getTarget( 'prev' );
+								}
+							};
+							break;
+					}
 				}
-			} );
+				this.flexAnimate( target, this.options.pauseOnAction );
+			};
 
 			// PAUSEPLAY
 			if ( this.options.pausePlay ) {
@@ -226,7 +660,7 @@ class flexslider {
 								! this.slider.manualPlay &&
 								! this.slider.manualPause
 							) {
-								slider.pause();
+								this.pause();
 							}
 						} )
 						.on( 'mouseleave', function () {
@@ -235,7 +669,7 @@ class flexslider {
 								! this.slider.manualPlay &&
 								! this.slider.stopped
 							) {
-								this.slider.play();
+								this.play();
 							}
 						} );
 				}
@@ -245,10 +679,10 @@ class flexslider {
 					! this.options.pauseInvisible ||
 					! this.pauseInvisible.isHidden()
 				) {
-					slider.vars.initDelay > 0
+					this.options.initDelay > 0
 						? ( this.slider.startTimeout = setTimeout(
 								slider.play,
-								slider.vars.initDelay
+								this.options.initDelay
 						  ) )
 						: this.slider.play();
 				}
@@ -265,7 +699,11 @@ class flexslider {
 			}
 
 			// FADE&&SMOOTHHEIGHT || SLIDE:
-			if ( ! this.fade || ( this.fade && this.options.smoothHeight ) ) {
+			if (
+				! this.options.animation === 'fade' ||
+				( this.options.animation === 'fade' &&
+					this.options.smoothHeight )
+			) {
 				$( window ).on( 'resize orientationchange focus', this.resize );
 			}
 
@@ -277,427 +715,6 @@ class flexslider {
 			}, 200 );
 		}
 	}
-
-	asNav = {
-		setup() {
-			this.slider.asNav = true;
-			this.slider.animatingTo = Math.floor(
-				this.slider.currentSlide / this.slider.move
-			);
-			this.slider.currentItem = this.slider.currentSlide;
-			this.slider.slides.classList.remove(
-				this.namespace + 'active-slide'
-			);
-			this.slider.slides[ this.slider.currentItem ].classList.add(
-				this.namespace + 'active-slide'
-			);
-
-			this.slider.slides.on( this.eventType, function ( e ) {
-				e.preventDefault();
-				const $slide = $( this ),
-					target = $slide.index();
-				let posFromX;
-				if ( this.options.rtl ) {
-					posFromX =
-						-1 *
-						( $slide.offset().right -
-							$( this.slider ).scrollLeft() ); // Find position of slide relative to right of slider container
-				} else {
-					posFromX =
-						$slide.offset().left - $( this.slider ).scrollLeft(); // Find position of slide relative to left ofthis.slider container
-				}
-				if (
-					posFromX <= 0 &&
-					$slide.hasClass( this.namespace + 'active-slide' )
-				) {
-					this.flexAnimate( this.getTarget( 'prev' ), true );
-				} else if (
-					! $( this.options.asNavFor ).data( 'flexslider' )
-						.animating &&
-					! $slide.hasClass( this.namespace + 'active-slide' )
-				) {
-					this.slider.direction =
-						this.slider.currentItem < target ? 'next' : 'prev';
-					this.flexAnimate(
-						target,
-						this.options.pauseOnAction,
-						false,
-						true,
-						true
-					);
-				}
-			} );
-		},
-	};
-
-	controlNav = {
-		setup() {
-			if ( ! this.slider.manualControls ) {
-				this.controlNav.setupPaging();
-			} else {
-				// MANUALCONTROLS:
-				this.controlNav.setupManual();
-			}
-		},
-
-		setupPaging() {
-			let type =
-					this.options.controlNav === 'thumbnails'
-						? 'control-thumbs'
-						: 'control-paging',
-				j = 1,
-				item,
-				slide;
-
-			this.slider.controlNavScaffold = $(
-				'<ol class="' +
-					this.namespace +
-					'control-nav ' +
-					this.namespace +
-					type +
-					'"></ol>'
-			);
-
-			if ( this.slider.pagingCount > 1 ) {
-				for ( let i = 0; i < this.slider.pagingCount; i++ ) {
-					slide = this.slider.slides.eq( i );
-
-					if ( undefined === slide.attr( 'data-thumb-alt' ) ) {
-						slide.attr( 'data-thumb-alt', '' );
-					}
-
-					item = $( '<a></a>' ).attr( 'href', '#' ).text( j );
-					if (
-						this.options.controlNav === 'thumbnails' &&
-						this.options.manualControls === ''
-					) {
-						item = $( '<img/>', {
-							Width: this.slider.navItemSize,
-							Height: this.slider.navItemSize,
-							src: slide.attr( 'data-thumb' ),
-							srcset: `${ slide.attr(
-								'data-thumb'
-							) } ${ Math.round(
-								this.slider.w / this.slider.navItemSize
-							) }w, ${ slide
-								.find( 'img' )
-								.attr( 'src' ) } ${ Math.round(
-								this.slider.w
-							) }w`,
-							sizes: `(max-width: ${ Math.round(
-								this.slider.w
-							) }px) 100vw, ${ Math.round( this.slider.w ) }px`,
-							alt: slide.attr( 'alt' ),
-						} );
-					} else {
-						item = $( '<img/>', {
-							Width: this.slider.navItemSize,
-							Height: this.slider.navItemSize,
-							src: slide.attr( 'data-thumb' ),
-							alt: slide.attr( 'alt' ),
-						} );
-					}
-
-					if ( '' !== slide.attr( 'data-thumb-alt' ) ) {
-						item.attr( 'alt', slide.attr( 'data-thumb-alt' ) );
-					}
-
-					if (
-						'thumbnails' === this.options.controlNav &&
-						true === this.options.thumbCaptions
-					) {
-						const captn = slide.attr( 'data-thumbcaption' );
-						if ( '' !== captn && undefined !== captn ) {
-							const caption = $( '<span></span>' )
-								.addClass( this.namespace + 'caption' )
-								.text( captn );
-							item.append( caption );
-						}
-					}
-
-					const liElement = $( '<li>' );
-					item.appendTo( liElement );
-					liElement.append( '</li>' );
-
-					this.slider.controlNavScaffold.append( liElement );
-					j++;
-				}
-			}
-
-			// CONTROLSCONTAINER:
-			this.slider.controlsContainer
-				? $( this.slider.controlsContainer ).append(
-						this.slider.controlNavScaffold
-				  )
-				: this.slider.append( slider.controlNavScaffold );
-			this.controlNav.set();
-
-			this.controlNav.active();
-
-			this.slider.controlNavScaffold.on(
-				this.eventType,
-				'a, img',
-				function ( event ) {
-					event.preventDefault();
-
-					if (
-						this.watchedEvent === '' ||
-						this.watchedEvent === event.type
-					) {
-						const $this = $( this ),
-							target = this.slider.controlNav.index( $this );
-
-						if ( ! $this.hasClass( this.namespace + 'active' ) ) {
-							this.slider.direction =
-								target > this.slider.currentSlide
-									? 'next'
-									: 'prev';
-							this.flexAnimate(
-								target,
-								this.options.pauseOnAction
-							);
-						}
-					}
-
-					// setup flags to prevent event duplication
-					if ( this.watchedEvent === '' ) {
-						this.watchedEvent = event.type;
-					}
-					this.setToClearWatchedEvent();
-				}
-			);
-		},
-
-		setupManual() {
-			this.slider.controlNav = this.slider.manualControls;
-			this.controlNav.active();
-
-			this.slider.controlNav.on( this.eventType, function ( event ) {
-				event.preventDefault();
-
-				if (
-					this.watchedEvent === '' ||
-					this.watchedEvent === event.type
-				) {
-					const $this = $( this ),
-						target = this.slider.controlNav.index( $this );
-
-					if ( ! $this.hasClass( this.namespace + 'active' ) ) {
-						target > this.slider.currentSlide
-							? ( this.slider.direction = 'next' )
-							: ( this.slider.direction = 'prev' );
-						this.flexAnimate( target, this.options.pauseOnAction );
-					}
-				}
-
-				// setup flags to prevent event duplication
-				if ( this.watchedEvent === '' ) {
-					this.watchedEvent = event.type;
-				}
-				this.setToClearWatchedEvent();
-			} );
-		},
-
-		set() {
-			const selector =
-				this.options.controlNav === 'thumbnails' ? 'img' : 'a';
-			this.slider.controlNav = $(
-				'.' + this.namespace + 'control-nav li ' + selector,
-				this.slider.controlsContainer
-					? this.slider.controlsContainer
-					: this.slider
-			);
-		},
-
-		active() {
-			this.slider.controlNav
-				.removeClass( this.namespace + 'active' )
-				.eq( this.animatingTo )
-				.addClass( this.namespace + 'active' );
-		},
-
-		update( action, pos ) {
-			if ( this.slider.pagingCount > 1 && action === 'add' ) {
-				this.slider.controlNavScaffold.append(
-					$( '<li><a href="#">' + this.slider.count + '</a></li>' )
-				);
-			} else if ( this.slider.pagingCount === 1 ) {
-				this.slider.controlNavScaffold.find( 'li' ).remove();
-			} else {
-				this.slider.controlNav.eq( pos ).closest( 'li' ).remove();
-			}
-			this.controlNav.set();
-			this.slider.pagingCount > 1 &&
-			this.slider.pagingCount !== this.slider.controlNav.length
-				? this.update( pos, action )
-				: this.controlNav.active();
-		},
-	};
-
-	directionNav = {
-		setup() {
-			const directionNavScaffold = $(
-				'<ul class="' +
-					this.namespace +
-					'direction-nav"><li class="' +
-					this.namespace +
-					'nav-prev"><a class="' +
-					this.namespace +
-					'prev" href="#">' +
-					this.options.prevText +
-					'</a></li><li class="' +
-					this.namespace +
-					'nav-next"><a class="' +
-					this.namespace +
-					'next" href="#">' +
-					this.options.nextText +
-					'</a></li></ul>'
-			);
-
-			// CUSTOM DIRECTION NAV:
-			if ( this.slider.customDirectionNav ) {
-				this.slider.directionNav = this.slider.customDirectionNav;
-				// CONTROLSCONTAINER:
-			} else if ( this.slider.controlsContainer ) {
-				$( this.slider.controlsContainer ).append(
-					directionNavScaffold
-				);
-				this.slider.directionNav = $(
-					'.' + this.namespace + 'direction-nav li a',
-					this.slider.controlsContainer
-				);
-			} else {
-				this.append( directionNavScaffold );
-				this.slider.directionNav = $(
-					'.' + this.namespace + 'direction-nav li a',
-					slider
-				);
-			}
-
-			this.directionNav.update();
-
-			this.slider.directionNav.on( this.eventType, function ( event ) {
-				event.preventDefault();
-				let target;
-
-				if (
-					this.watchedEvent === '' ||
-					this.watchedEvent === event.type
-				) {
-					target = $( this ).hasClass( this.namespace + 'next' )
-						? this.getTarget( 'next' )
-						: this.getTarget( 'prev' );
-					this.flexAnimate( target, this.options.pauseOnAction );
-				}
-
-				// setup flags to prevent event duplication
-				if ( this.watchedEvent === '' ) {
-					this.watchedEvent = event.type;
-				}
-				this.setToClearWatchedEvent();
-			} );
-		},
-
-		update() {
-			console.log( 'updating...' );
-			const disabledClass = this.namespace + 'disabled';
-			if ( this.slider.pagingCount === 1 ) {
-				this.slider.directionNav
-					.addClass( disabledClass )
-					.attr( 'tabindex', '-1' );
-			} else if ( ! this.options.animationLoop ) {
-				if ( this.slider.animatingTo === 0 ) {
-					this.slider.directionNav
-						.removeClass( disabledClass )
-						.filter( '.' + this.namespace + 'prev' )
-						.addClass( disabledClass )
-						.attr( 'tabindex', '-1' );
-				} else if ( this.slider.animatingTo === this.slider.last ) {
-					this.slider.directionNav
-						.removeClass( disabledClass )
-						.filter( '.' + this.namespace + 'next' )
-						.addClass( disabledClass )
-						.attr( 'tabindex', '-1' );
-				} else {
-					this.slider.directionNav
-						.removeClass( disabledClass )
-						.prop( 'tabindex', '-1' );
-				}
-			} else {
-				this.slider.directionNav
-					.removeClass( disabledClass )
-					.prop( 'tabindex', '-1' );
-			}
-		},
-	};
-
-	pausePlay = {
-		setup() {
-			const pausePlayScaffold = $(
-				'<div class="' +
-					this.namespace +
-					'pauseplay"><a href="#"></a></div>'
-			);
-
-			// CONTROLSCONTAINER:
-			if ( this.slider.controlsContainer ) {
-				this.slider.controlsContainer.append( pausePlayScaffold );
-				this.slider.pausePlay = $(
-					'.' + this.namespace + 'pauseplay a',
-					this.slider.controlsContainer
-				);
-			} else {
-				this.append( pausePlayScaffold );
-				this.slider.pausePlay = $(
-					'.' + this.namespace + 'pauseplay a',
-					this.slider
-				);
-			}
-
-			this.pausePlay.update(
-				this.options.slideshow
-					? this.namespace + 'pause'
-					: this.namespace + 'play'
-			);
-
-			this.slider.pausePlay.on( this.eventType, function ( event ) {
-				event.preventDefault();
-
-				if (
-					this.watchedEvent === '' ||
-					this.watchedEvent === event.type
-				) {
-					if ( $( this ).hasClass( this.namespace + 'pause' ) ) {
-						this.slider.manualPause = true;
-						this.slider.manualPlay = false;
-						this.pause();
-					} else {
-						this.slider.manualPause = false;
-						this.slider.manualPlay = true;
-						this.slider.play();
-					}
-				}
-
-				// setup flags to prevent event duplication
-				if ( this.watchedEvent === '' ) {
-					this.watchedEvent = event.type;
-				}
-				this.setToClearWatchedEvent();
-			} );
-		},
-
-		update( state ) {
-			state === 'play'
-				? this.slider.pausePlay
-						.removeClass( this.namespace + 'pause' )
-						.addClass( this.namespace + 'play' )
-						.html( this.options.playText )
-				: this.slider.pausePlay
-						.removeClass( this.namespace + 'play' )
-						.addClass( this.namespace + 'pause' )
-						.html( this.options.pauseText );
-		},
-	};
 
 	touch() {
 		let startX,
@@ -723,7 +740,10 @@ class flexslider {
 			) {
 				this.pause();
 				// CAROUSEL:
-				this.cwidth = this.vertical ? this.slider.h : this.slider.w;
+				this.cwidth =
+					this.options.direction === 'vertical'
+						? this.slider.h
+						: this.slider.w;
 				this.startT = Number( new Date() );
 				// CAROUSEL:
 
@@ -756,8 +776,10 @@ class flexslider {
 						: ( this.slider.currentSlide +
 								this.slider.cloneOffset ) *
 						  cwidth;
-				this.startX = this.vertical ? localY : localX;
-				this.startY = this.vertical ? localX : localY;
+				this.startX =
+					this.options.direction === 'vertical' ? localY : localX;
+				this.startY =
+					this.options.direction === 'vertical' ? localX : localY;
 				this.el.addEventListener( 'touchmove', onTouchMove, false );
 				this.el.addEventListener( 'touchend', onTouchEnd, false );
 			}
@@ -769,17 +791,22 @@ class flexslider {
 			this.localX = e.touches[ 0 ].pageX;
 			this.localY = e.touches[ 0 ].pageY;
 
-			this.dx = this.vertical
-				? startX - localY
-				: ( this.options.rtl ? -1 : 1 ) * ( startX - localX );
-			this.scrolling = this.vertical
-				? Math.abs( dx ) < Math.abs( localX - startY )
-				: Math.abs( dx ) < Math.abs( localY - startY );
+			this.dx =
+				this.options.direction === 'vertical'
+					? startX - localY
+					: ( this.options.rtl ? -1 : 1 ) * ( startX - localX );
+			this.scrolling =
+				this.options.direction === 'vertical'
+					? Math.abs( dx ) < Math.abs( localX - startY )
+					: Math.abs( dx ) < Math.abs( localY - startY );
 			const fxms = 500;
 
 			if ( ! scrolling || Number( new Date() ) - startT > fxms ) {
 				e.preventDefault();
-				if ( ! this.fade && this.slider.transitions ) {
+				if (
+					! this.options.animation === 'fade' &&
+					this.slider.transitions
+				) {
 					if ( ! this.options.animationLoop ) {
 						this.dx =
 							dx /
@@ -816,7 +843,7 @@ class flexslider {
 						Math.abs( updateDx ) > cwidth / 2 )
 				) {
 					this.flexAnimate( target, this.options.pauseOnAction );
-				} else if ( ! this.fade ) {
+				} else if ( ! this.options.animation === 'fade' ) {
 					this.flexAnimate(
 						this.slider.currentSlide,
 						this.options.pauseOnAction,
@@ -841,7 +868,7 @@ class flexslider {
 				this.slider.doMath();
 			}
 
-			if ( this.fade ) {
+			if ( this.options.animation === 'fade' ) {
 				// SMOOTH HEIGHT:
 				this.smoothHeight();
 			} else if ( this.carousel ) {
@@ -849,7 +876,7 @@ class flexslider {
 				this.slider.slides.width( this.slider.computedW );
 				this.update( this.slider.pagingCount );
 				this.setProps();
-			} else if ( this.vertical ) {
+			} else if ( this.options.direction === 'vertical' ) {
 				//VERTICAL:
 				this.slider.viewport.height( this.slider.computedW );
 				this.slider.newSlides.css( {
@@ -872,10 +899,14 @@ class flexslider {
 	}
 
 	smoothHeight( dur ) {
-		if ( ! this.vertical || this.fade ) {
-			const $obj = this.fade
-				? this.slider.container
-				: this.slider.viewport;
+		if (
+			! this.options.direction === 'vertical' ||
+			this.options.animation === 'fade'
+		) {
+			const $obj =
+				this.options.animation === 'fade'
+					? this.slider.container
+					: this.slider.viewport;
 			if ( dur ) {
 				$obj.animate(
 					{
@@ -1084,10 +1115,11 @@ class flexslider {
 			}
 
 			// SLIDE:
-			if ( ! this.fade ) {
-				var dimension = this.vertical
-						? this.slider.slides.filter( ':first' ).height()
-						: this.slider.computedW,
+			if ( ! this.options.animation === 'fade' ) {
+				var dimension =
+						this.options.direction === 'vertical'
+							? this.slider.slides.filter( ':first' ).height()
+							: this.slider.computedW,
 					margin,
 					slideString,
 					calcNext;
@@ -1209,7 +1241,7 @@ class flexslider {
 
 	wrapup = function ( dimension ) {
 		// SLIDE:
-		if ( ! this.fade && ! this.carousel ) {
+		if ( ! this.options.animation === 'fade' && ! this.carousel ) {
 			if (
 				this.slider.currentSlide === 0 &&
 				this.slider.animatingTo === this.slider.last &&
@@ -1236,6 +1268,7 @@ class flexslider {
 			this.slider.flexAnimate( this.slider.getTarget( 'next' ) );
 		}
 	};
+
 	// SLIDESHOW:
 	pause = function () {
 		clearInterval( this.slider.animatedSlides );
@@ -1272,12 +1305,12 @@ class flexslider {
 		}
 	};
 	// STOP:
-	stop = function () {
-		this.slider.pause();
+	stop() {
+		this.pause();
 		this.slider.stopped = true;
-	};
+	}
 
-	canAdvance = function ( target, fromNav ) {
+	canAdvance( target, fromNav ) {
 		// ASNAV:
 		const last = asNav ? this.slider.pagingCount - 1 : this.slider.last;
 		return fromNav
@@ -1307,9 +1340,9 @@ class flexslider {
 			  this.slider.direction === 'next'
 			? false
 			: true;
-	};
+	}
 
-	getTarget = function ( dir ) {
+	getTarget( dir ) {
 		this.slider.direction = dir;
 		if ( dir === 'next' ) {
 			return this.slider.currentSlide === this.slider.last
@@ -1319,61 +1352,67 @@ class flexslider {
 		return this.slider.currentSlide === 0
 			? this.slider.last
 			: this.slider.currentSlide - 1;
-	};
+	}
+
+	posCalc( pos, special, posCheck ) {
+		if ( this.carousel ) {
+			return special === 'setTouch'
+				? pos
+				: this.reverse && this.slider.animatingTo === this.slider.last
+				? 0
+				: this.reverse
+				? this.slider.limit -
+				  ( this.slider.itemW + this.options.itemMargin ) *
+						this.slider.move *
+						this.slider.animatingTo
+				: this.slider.animatingTo === this.slider.last
+				? this.slider.limit
+				: posCheck;
+		}
+		switch ( special ) {
+			case 'setTotal':
+				return this.reverse
+					? ( this.slider.count -
+							1 -
+							this.slider.currentSlide +
+							this.slider.cloneOffset ) *
+							pos
+					: ( this.slider.currentSlide + this.slider.cloneOffset ) *
+							pos;
+			case 'setTouch':
+				return this.reverse ? pos : pos;
+			case 'jumpEnd':
+				return this.reverse ? pos : this.slider.count * pos;
+			case 'jumpStart':
+				return this.reverse ? this.slider.count * pos : pos;
+			default:
+				return pos;
+		}
+	}
 
 	// SLIDE:
-	setProps = function ( pos, special, dur ) {
-		let target = ( function () {
+	setProps( pos, special, dur ) {
+		let target = () => {
 			const posCheck = pos
-					? pos
-					: ( this.slider.itemW + this.options.itemMargin ) *
-					  this.slider.move *
-					  this.slider.animatingTo,
-				posCalc = ( function () {
-					if ( this.carousel ) {
-						return special === 'setTouch'
-							? pos
-							: this.reverse &&
-							  this.slider.animatingTo === this.slider.last
-							? 0
-							: this.reverse
-							? this.slider.limit -
-							  ( this.slider.itemW + this.options.itemMargin ) *
-									this.slider.move *
-									this.slider.animatingTo
-							: this.slider.animatingTo === this.slider.last
-							? this.slider.limit
-							: posCheck;
-					}
-					switch ( special ) {
-						case 'setTotal':
-							return this.reverse
-								? ( this.slider.count -
-										1 -
-										this.slider.currentSlide +
-										this.slider.cloneOffset ) *
-										pos
-								: ( this.slider.currentSlide +
-										this.slider.cloneOffset ) *
-										pos;
-						case 'setTouch':
-							return this.reverse ? pos : pos;
-						case 'jumpEnd':
-							return this.reverse ? pos : this.slider.count * pos;
-						case 'jumpStart':
-							return this.reverse ? this.slider.count * pos : pos;
-						default:
-							return pos;
-					}
-				} )();
+				? pos
+				: ( this.slider.itemW + this.options.itemMargin ) *
+				  this.slider.move *
+				  this.slider.animatingTo;
 
-			return posCalc * ( this.options.rtl ? 1 : -1 ) + 'px';
-		} )();
+			return (
+				this.posCalc( pos, special, posCheck ) *
+					( this.options.rtl ? 1 : -1 ) +
+				'px'
+			);
+
+			console.log( posCheck );
+		};
 
 		if ( this.slider.transitions ) {
-			target = this.vertical
-				? 'translate3d(0,' + target + ',0)'
-				: 'translate3d(' + ( parseInt( target ) + 'px' ) + ',0,0)';
+			target =
+				this.options.direction === 'vertical'
+					? 'translate3d(0,' + target + ',0)'
+					: 'translate3d(' + ( parseInt( target ) + 'px' ) + ',0,0)';
 			dur = dur !== undefined ? dur / 1000 + 's' : '0s';
 			this.slider.container.css(
 				'-' + this.slider.pfx + '-transition-duration',
@@ -1384,131 +1423,148 @@ class flexslider {
 
 		this.slider.args[ this.slider.prop ] = target;
 		if ( this.slider.transitions || dur === undefined ) {
-			this.slider.container.css( this.slider.args );
+			// TODO: changed but not sure - in this case can be simplified
+			this.slider.container.style.transform = target;
 		}
 
-		this.slider.container.css( 'transform', target );
-	};
+		this.slider.container.style.transform = target;
+	}
 
-	setup = function ( type ) {
-		this.slider.slides.slice( 1 ).each( function () {
-			if ( document.readyState !== 'complete' ) {
-				const $img = $( this ).find( 'img' ).first();
-				$img.data( {
-					src: $img.attr( 'src' ),
-					srcset: $img.attr( 'srcset' ),
-				} )
-					.removeAttr( 'src srcset' )
-					.addClass( 'flexslider-deferred' );
-			}
-		} );
+	/**
+	 * @param {string} type
+	 */
+	setup( type ) {
+		// Object.values( this.slider.slides )
+		// 	.slice( 1 )
+		// 	.forEach( ( slide ) => {
+		// 		if ( document.readyState !== 'complete' ) {
+		// 			const img = slide.querySelector( 'img' );
+		// 			img.dataset.src = img.attr( 'src' );
+		// 			img.dataset.srcset = img.attr( 'srcset' );
+		// 			img.removeAttribute( 'src' );
+		// 			img.removeAttribute( 'srcset' );
+		// 			img.classList.add( 'flexslider-deferred' );
+		// 		}
+		// 	} );
 		// SLIDE:
-		if ( ! this.fade ) {
-			let sliderOffset, arr;
+		if ( this.options.animation !== 'fade' ) {
+			let arr;
 
 			if ( type === 'init' ) {
 				if ( this.options.manualControls === '' ) {
-					this.slider.viewport = $(
-						'<div class="' + this.namespace + 'viewport"></div>'
-					)
-						.css( { overflow: 'hidden', position: 'relative' } )
-						.appendTo( this.slider )
-						.append( this.slider.container );
+					const viewport = document.createElement( 'div' );
+					viewport.classList.add( this.namespace + 'viewport' );
+					viewport.style = {
+						overflow: 'hidden',
+						position: 'relative',
+					};
+					this.slider.viewport = viewport;
+					this.slider.viewport.append( this.slider.container );
+					this.slider.append( this.slider.viewport ); // TODO: or .insertAdjacentHTML('beforeend', html)
 				} else {
-					this.slider.viewport = $(
-						'<div class="' + this.namespace + 'viewport"></div>'
-					)
-						.css( { overflow: 'hidden', position: 'relative' } )
-						.prependTo( this.slider )
-						.prepend( this.slider.container );
+					const viewport = document.createElement( 'div' );
+					viewport.classList.add( this.namespace + 'viewport' );
+					viewport.style = {
+						overflow: 'hidden',
+						position: 'relative',
+					};
+					this.slider.viewport = viewport;
+					this.slider.viewport.prepend( this.slider.container );
+					this.slider.prepend( this.slider.viewport ); // TODO: or .insertAdjacentHTML('beforeend', html)
 				}
+
 				// INFINITE LOOP:
 				this.slider.cloneCount = 0;
 				this.slider.cloneOffset = 0;
+
 				// REVERSE:
 				if ( this.reverse ) {
-					arr = $.makeArray( this.slider.slides ).reverse();
-					this.slider.slides = $( arr );
+					arr = [].slice.call( this.slider.slides ).reverse();
+					this.slider.slides = arr;
 					this.slider.container.empty().append( this.slider.slides );
 				}
 			}
+
 			// INFINITE LOOP && !CAROUSEL:
 			if ( this.options.animationLoop && ! this.carousel ) {
 				this.slider.cloneCount = 2;
 				this.slider.cloneOffset = 1;
 				// clear out old clones
 				if ( type !== 'init' ) {
-					this.slider.container.find( '.clone' ).remove();
+					this.slider.container.querySelector( '.clone' ).remove();
 				}
 				this.slider.container
 					.append(
-						methods
-							.uniqueID(
-								this.slider.slides
-									.first()
-									.clone()
-									.addClass( 'clone' )
-							)
-							.attr( 'aria-hidden', 'true' )
+						this.uniqueID(
+							this.slider.slides
+								.first()
+								.clone()
+								.addClass( 'clone' )
+						).attr( 'aria-hidden', 'true' )
 					)
 					.prepend(
-						methods
-							.uniqueID(
-								this.slider.slides
-									.last()
-									.clone()
-									.addClass( 'clone' )
-							)
-							.attr( 'aria-hidden', 'true' )
+						this.uniqueID(
+							this.slider.slides
+								.last()
+								.clone()
+								.addClass( 'clone' )
+						).attr( 'aria-hidden', 'true' )
 					);
 			}
-			this.slider.newSlides = $( this.options.selector, this.slider );
 
-			sliderOffset = this.reverse
+			this.slider.newSlides = this.slider.querySelector(
+				this.options.selector
+			);
+
+			const sliderOffset = this.reverse
 				? this.slider.count -
 				  1 -
 				  this.slider.currentSlide +
 				  this.slider.cloneOffset
 				: this.slider.currentSlide + this.slider.cloneOffset;
-			this.slider.doMath();
+
+			this.doMath();
+
 			// VERTICAL:
-			if ( this.vertical && ! this.carousel ) {
-				this.slider.viewport.height( this.slider.h );
-				this.slider.newSlides.css( {
-					display: 'block',
-					width: this.slider.computedW,
-					height: this.slider.computedW,
-				} );
-				this.slider.container
-					.height(
+			if ( this.options.direction === 'vertical' && ! this.carousel ) {
+				this.slider.viewport.style.height = this.slider.h;
+				this.slider.newSlides.forEach(
+					( slide ) =>
+						( slide.style = {
+							display: 'block',
+							width: this.slider.computedW,
+							height: this.slider.computedW,
+						} )
+				);
+				this.slider.container.style = {
+					height:
 						( this.slider.count + this.slider.cloneCount ) * 200 +
-							'%'
-					)
-					.css( 'position', 'absolute' )
-					.width( '100%' );
-				this.slider.setProps( sliderOffset * this.slider.h, 'init' );
+						'%',
+					position: 'absolute',
+					width: '100%',
+				};
+				this.setProps( sliderOffset * this.slider.h, 'init' );
 			} else {
 				if ( type === 'init' )
-					this.slider.viewport.css( {
+					this.slider.viewport.style = {
 						height: this.slider.h,
-						'overflow-X': 'hidden',
-					} );
-				this.slider.newSlides.css( {
-					width: this.slider.computedW,
-					marginRight: this.slider.computedM,
-					float: this.options.rtl ? 'right' : 'left',
-					display: 'block',
+						overflowX: 'hidden',
+					};
+				Object.values( this.slider.newSlides ).forEach( ( slide ) => {
+					slide.style = {
+						width: this.slider.computedW,
+						marginRight: this.slider.computedM,
+						float: this.options.rtl ? 'right' : 'left',
+						display: 'block',
+					};
 				} );
-				this.slider.container.css( {
+				this.slider.container.style = {
 					height: '',
 					width:
 						( this.slider.count + this.slider.cloneCount ) * 200 +
 						'%',
-				} );
-				this.slider.setProps(
-					sliderOffset * this.slider.computedW,
-					'init'
-				);
+				};
+				this.setProps( sliderOffset * this.slider.computedW, 'init' );
 				setTimeout(
 					function () {
 						// SMOOTH HEIGHT:
@@ -1580,20 +1636,23 @@ class flexslider {
 				this.smoothHeight();
 			}
 		}
+
 		// !CAROUSEL:
 		// CANDIDATE: active slide
 		if ( ! this.carousel ) {
-			this.slider.slides
-				.removeClass( this.namespace + 'active-slide' )
-				.eq( this.slider.currentSlide )
-				.addClass( this.namespace + 'active-slide' );
+			this.slider.slides.forEach( ( slide ) => {
+				slide.classList.remove( this.namespace + 'active-slide' );
+			} );
+			this.slider.slides[ this.slider.currentSlide ].classList.add(
+				this.namespace + 'active-slide'
+			);
 		}
 
 		//FlexSlider: init() Callback
 		this.options.init( this.slider );
-	};
+	}
 
-	doMath = function () {
+	doMath() {
 		const slide = [ ...this.slider.slides ].shift(),
 			slideMargin = this.options.itemMargin,
 			minItems = this.options.minItems,
@@ -1669,7 +1728,7 @@ class flexslider {
 		}
 		this.slider.computedW = this.slider.itemW - this.slider.boxPadding;
 		this.slider.computedM = this.slider.itemM;
-	};
+	}
 
 	update = function ( pos, action ) {
 		this.slider.doMath();
@@ -1720,7 +1779,7 @@ class flexslider {
 		this.slider.last = this.slider.count - 1;
 
 		// append new slide
-		if ( this.vertical && this.reverse ) {
+		if ( this.options.direction === 'vertical' && this.reverse ) {
 			pos !== undefined
 				? this.slider.slides.eq( this.slider.count - pos ).after( $obj )
 				: this.slider.container.prepend( $obj );
