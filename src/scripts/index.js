@@ -4,42 +4,100 @@
  * Contributing Author: Tyler Smith, Erik
  */
 import { defaults } from './defaults';
-import { hasTouch } from './compat';
+import { hasTouch } from './utils/compat';
 
-import { controlNav } from './components/controlNav';
-import { asNav } from './components/asNav';
-import { pausePlay } from './components/pausePlay';
-import { directionNav } from './components/directionNav';
+import ControlNav from './components/controlNav';
+import AsNav from './components/asNav';
+import { PausePlay, PauseInvisible } from './components/pausePlay';
+import DirectionNav from './components/directionNav';
 
-let focused = true;
+import touchHandler from './components/touchHandler';
+
+export let focused = true;
+
+/** @typedef {string} eventType events that triggers changes (space separated) */
+export const eventType = 'click touchend keyup';
 
 export function throwError( message ) {
 	throw new Error( 'Flexslider: ' + message );
 }
+
+window.customElements.define( 'pause-play', PausePlay );
+window.customElements.define( 'direction-nav', DirectionNav );
+
+/**
+ * @typedef {Object|throwError} slider
+ * @property {boolean}        animating          the animations is running
+ * @property {number}         currentSlide       the current slide
+ * @property {number}         animatingTo        the animation target slide
+ * @property {boolean}        atEnd              the slider has reach the end
+ * @property {string}         containerSelector  the slider container class
+ * @property {HTMLElement}    container          the slider container element
+ * @property {HTMLCollection} slides             the slider sliders elements
+ * @property {number}         count              the number of slides
+ * @property {number}         itemsPerRow        the number of items per row
+ * @property {boolean}        syncExists         thumbnail sync requested
+ * @property {string}         animation          the animation type
+ * @property {string}         prop               the slider properties to decide what kind of vendor-prefixed version to use... this needs to be removed since not useful
+ * @property {Object}         args               the slider arguments
+ * @property {boolean}        manualPause        the slider has been paused
+ * @property {boolean}        stopped            the slider has been stopped
+ * @property {boolean}        started            the slider is running
+ * @property {number}         startTimeout       the time before enable the slider
+ * @property {boolean}        isFirefox          the current browser is firefox
+ * @property {boolean}        ensureAnimationEnd the animation has ended
+ *
+ */
+
+/**
+ * setStyle
+ * "Set the style of an element to the given style."
+ *
+ * The function takes two arguments: an element and a style. The style is an object that contains CSS properties and values. The function uses the Object.assign() method to copy the properties and values from the style object to the element's
+ * style object
+ *
+ * @param {HTMLElement} element - The element to set the style on.
+ * @param {Object}      style   - An object containing the styles to be applied to the element.
+ */
+export const setStyle = function ( element, style ) {
+	Object.assign( element.style, style );
+};
 
 /**
  * @class flexslider
  */
 class flexslider {
 	/**
-	 * @param    {HTMLElement}    el           - the slider
-	 * @param    {defaults|false} options      - the slider options
+	 * @typedef {import('./defaults.js').defaults} FlexsliderDefaults
+	 */
+
+	/**
 	 *
-	 * @property {HTMLElement}    slider       - the slider html element
-	 * @property {string}         namespace    - the name
-	 * @property {Object|false}   touch        - touch events enabled/disabled
-	 * @property {string}         eventType    - the events that fires changes
-	 * @property {boolean}        vertical     - the slide direction is vertical instead of horizontal (to not be confused with navigation bar that is always horizontal at the moment)
-	 * @property {boolean}        reverse      - the slider direction
-	 * @property {boolean}        carousel     - the slider options
+	 * @param    {HTMLElement}              el             - the slider
+	 * @param    {FlexsliderDefaults|false} options        - the slider options
 	 *
-	 * @property {Object}         asNav        - if is the navigation bar
+	 * @property {slider}                   slider         - the slider html element
+	 * @property {FlexsliderDefaults|false} options        - the slider options
+	 * @property {string}                   namespace      - the name
 	 *
-	 * @property {Object}         controlNav   - the object that contain the controlNav
-	 * @property {Object}         directionNav - the object that contain the directionNav
+	 * @property {Object|false}             touch          - touch events enabled/disabled
+	 * @property {string}                   eventType      - the events that fires changes
+	 * @property {boolean}                  vertical       - the slide direction is vertical instead of horizontal (to not be confused with navigation bar that is always horizontal at the moment)
+	 * @property {boolean}                  reverse        - the slider direction
 	 *
+	 * @property {Object|false}             carousel       - the carousel (allows multiple slides at once)
 	 *
-	 * @property {string}         watchedEvent - in the name of the event we are waiting for
+	 * @property {Object}                   AsNav          - if is the navigation bar
+	 *
+	 * @property {HTMLElement}              controlNavEl   - the controlNav Element
+	 * @property {Object}                   controlNav     - the object that contain the controlNav
+	 *
+	 * @property {Object}                   pausePlay      - the pause play button element that controls the slider playback
+	 * @property {Object}                   pauseInvisible - pause when invisible
+	 *
+	 * @property {Object}                   directionNav   - the object that contain the directionNav
+	 *
+	 * @property {string}                   watchedEvent   - in the name of the event we are waiting for
 	 */
 	constructor( el, options = false ) {
 		this.slider = el || throwError( 'cannot find ' + options.selector );
@@ -47,17 +105,25 @@ class flexslider {
 		this.options = this.initOptions( options || {} );
 		this.namespace = this.options.namespace;
 
-		this.touch = hasTouch && this.options.touch ? {} : false;
-		this.eventType = 'click touchend keyup';
+		this.touch =
+			hasTouch && this.options.touch ? new touchHandler() : false;
+
 		this.reverse = this.options.reverse;
 		this.carousel = this.options.itemWidth > 0;
 
-		// this.asNav = this.options.asNavFor !== '';
-		// TODO: 👇 pass the proper data to constructors, will avoid to bind this to classes
-		this.asNav = new asNav();
-		this.controlNav = new controlNav();
-		this.pausePlay = new pausePlay();
-		this.directionNav = new directionNav();
+		this.asNav =
+			this.options.asNavFor !== '' &&
+			new AsNav( this.namespace, this.slider );
+
+		// 👇 Since this could be used selected we can create it with the class construtor
+		this.controlNavEl = '';
+		this.controlNav = this.options.controlNav
+			? new ControlNav( this.namespace, this.slider, this.options )
+			: null;
+
+		this.pausePlay = new PausePlay( this.namespace, this.slider );
+		this.pauseInvisible = new PauseInvisible();
+		this.directionNav = new DirectionNav();
 
 		this.watchedEvent = '';
 
@@ -82,14 +148,15 @@ class flexslider {
 		//this.slider.removeAttribute( 'data-src' );
 		//this.slider.removeAttribute( 'data-srcset' );
 
-		Object.assign( this.slider, {
+		// Get current slide and make sure it is a number, for convenience since it's used more than once
+		const startAt = parseInt( this.options.startAt, 10 ) || 0;
+
+		/** @type {slider} slideOpt */
+		const slideOpt = {
 			animating: false,
-			// Get current slide and make sure it is a number
-			currentSlide: parseInt( this.options.startAt, 10 ) || 0,
-			animatingTo: this.slider.currentSlide,
-			atEnd:
-				this.slider.currentSlide === 0 ||
-				this.slider.currentSlide === this.slider.last,
+			currentSlide: startAt,
+			animatingTo: startAt,
+			atEnd: startAt || startAt === this.slider.last,
 			containerSelector: this.options.selector.split( '>' ),
 			container: this.slider.querySelector(
 				this.options.selector.split( '>' )[ 0 ]
@@ -118,9 +185,11 @@ class flexslider {
 				window.navigator.userAgent.toLowerCase().indexOf( 'firefox' ) >
 				-1,
 			ensureAnimationEnd: '',
-		} );
+		};
 
-		if ( isNaN( this.slider.currentSlide ) ) {
+		Object.assign( this.slider, slideOpt );
+
+		if ( ! Number.isFinite( this.slider.currentSlide ) ) {
 			this.slider.currentSlide = 0;
 		}
 
@@ -187,14 +256,14 @@ class flexslider {
 		// INIT
 		this.setup( 'init' );
 
-		// CONTROLNAV:
+		// CONTROL-NAV:
 		if ( this.options.controlNav ) {
-			this.controlNav.bind( this ).setup();
+			this.controlNav.setup();
 		}
 
-		// DIRECTIONNAV:
+		// DIRECTION-NAV:
 		if ( this.options.directionNav ) {
-			this.directionNav.bind( this ).setup();
+			this.directionNav.setup();
 		}
 
 		// KEYBOARD:
@@ -228,9 +297,9 @@ class flexslider {
 							target = function ( e, delta ) {
 								e.preventDefault();
 								if ( delta < 0 ) {
-									target = this.getTarget( 'next' );
+									target = this.slider.getTarget( 'next' );
 								} else {
-									target = this.getTarget( 'prev' );
+									target = this.slider.getTarget( 'prev' );
 								}
 							};
 							break;
@@ -279,21 +348,21 @@ class flexslider {
 				) {
 					this.options.initDelay > 0
 						? ( this.slider.startTimeout = setTimeout(
-								slider.play,
+								this.play,
 								this.options.initDelay
 						  ) )
-						: this.slider.play();
+						: this.play();
 				}
 			}
 
 			// ASNAV:
-			if ( asNav ) {
+			if ( AsNav ) {
 				this.asNav.setup();
 			}
 
 			// TOUCH
-			if ( this.touch.length && this.options.touch ) {
-				this.touch.bind( this );
+			if ( this.touch && this.options.touch ) {
+				this.touch.init();
 			}
 
 			// FADE&&SMOOTHHEIGHT || SLIDE:
@@ -307,157 +376,10 @@ class flexslider {
 
 			this.slider.find( 'img' ).attr( 'draggable', 'false' );
 
-			// API: start() Callback
 			setTimeout( function () {
 				this.start();
 			}, 200 );
 		}
-	}
-
-	touch() {
-		let startX,
-			startY,
-			offset,
-			cwidth,
-			dx,
-			startT,
-			onTouchStart,
-			onTouchMove,
-			onTouchEnd,
-			scrolling = false,
-			localX = 0,
-			localY = 0,
-			accDx = 0;
-
-		onTouchStart = function ( e ) {
-			if ( this.slider.animating ) {
-				e.preventDefault();
-			} else if (
-				window.navigator.msPointerEnabled ||
-				e.touches.length === 1
-			) {
-				this.pause();
-				// CAROUSEL:
-				this.cwidth =
-					this.options.direction === 'vertical'
-						? this.slider.h
-						: this.slider.w;
-				this.startT = Number( new Date() );
-				// CAROUSEL:
-
-				// Local vars for X and Y points.
-				this.localX = e.touches[ 0 ].pageX;
-				this.localY = e.touches[ 0 ].pageY;
-
-				this.offset =
-					this.carousel &&
-					reverse &&
-					this.slider.animatingTo === this.slider.last
-						? 0
-						: this.carousel && reverse
-						? this.slider.limit -
-						  ( this.slider.itemW + this.options.itemMargin ) *
-								this.slider.move *
-								this.slider.animatingTo
-						: this.carousel &&
-						  this.slider.currentSlide === this.slider.last
-						? this.slider.limit
-						: this.carousel
-						? ( this.slider.itemW + this.options.itemMargin ) *
-						  this.slider.move *
-						  this.slider.currentSlide
-						: reverse
-						? ( this.slider.last -
-								this.slider.currentSlide +
-								this.slider.cloneOffset ) *
-						  cwidth
-						: ( this.slider.currentSlide +
-								this.slider.cloneOffset ) *
-						  cwidth;
-				this.startX =
-					this.options.direction === 'vertical' ? localY : localX;
-				this.startY =
-					this.options.direction === 'vertical' ? localX : localY;
-				this.el.addEventListener( 'touchmove', onTouchMove, false );
-				this.el.addEventListener( 'touchend', onTouchEnd, false );
-			}
-		};
-
-		onTouchMove = function ( e ) {
-			// Local vars for X and Y points.
-
-			this.localX = e.touches[ 0 ].pageX;
-			this.localY = e.touches[ 0 ].pageY;
-
-			this.dx =
-				this.options.direction === 'vertical'
-					? startX - localY
-					: ( this.options.rtl ? -1 : 1 ) * ( startX - localX );
-			this.scrolling =
-				this.options.direction === 'vertical'
-					? Math.abs( dx ) < Math.abs( localX - startY )
-					: Math.abs( dx ) < Math.abs( localY - startY );
-			const fxms = 500;
-
-			if ( ! scrolling || Number( new Date() ) - startT > fxms ) {
-				e.preventDefault();
-				if (
-					! this.options.animation === 'fade' &&
-					this.slider.transitions
-				) {
-					if ( ! this.options.animationLoop ) {
-						this.dx =
-							dx /
-							( ( this.slider.currentSlide === 0 && dx < 0 ) ||
-							( this.slider.currentSlide === this.slider.last &&
-								dx > 0 )
-								? Math.abs( dx ) / cwidth + 2
-								: 1 );
-					}
-					this.slider.setProps( offset + dx, 'setTouch' );
-				}
-			}
-		};
-
-		onTouchEnd = function ( e ) {
-			// finish the touch by undoing the touch session
-			this.slider.removeEventListener( 'touchmove', onTouchMove, false );
-
-			if (
-				this.slider.animatingTo === this.slider.currentSlide &&
-				! scrolling &&
-				! ( dx === null )
-			) {
-				const updateDx = this.reverse ? -dx : dx,
-					target =
-						updateDx > 0
-							? this.getTarget( 'next' )
-							: this.getTarget( 'prev' );
-
-				if (
-					this.canAdvance( target ) &&
-					( ( Number( new Date() ) - startT < 550 &&
-						Math.abs( updateDx ) > 50 ) ||
-						Math.abs( updateDx ) > cwidth / 2 )
-				) {
-					this.flexAnimate( target, this.options.pauseOnAction );
-				} else if ( ! this.options.animation === 'fade' ) {
-					this.flexAnimate(
-						this.slider.currentSlide,
-						this.options.pauseOnAction,
-						true
-					);
-				}
-			}
-			this.slider.removeEventListener( 'touchend', onTouchEnd, false );
-
-			startX = null;
-			startY = null;
-			dx = null;
-			offset = null;
-		};
-
-		this.slider.addEventListener( 'touchstart', onTouchStart, false );
 	}
 
 	resize() {
@@ -560,60 +482,12 @@ class flexslider {
 		return $clone;
 	}
 
-	pauseInvisible() {
-		const visProp = null;
-		function init() {
-			const visProp = this.pauseInvisible.getHiddenProp();
-			if ( visProp ) {
-				const evtname =
-					visProp.replace( /[H|h]idden/, '' ) + 'visibilitychange';
-				document.addEventListener( evtname, function () {
-					if ( this.pauseInvisible.isHidden() ) {
-						if ( this.slider.startTimeout ) {
-							clearTimeout( this.slider.startTimeout ); //If clock is ticking, stop timer and prevent from starting while invisible
-						} else {
-							this.pause(); //Or just pause
-						}
-					} else if ( this.slider.started ) {
-						this.play(); //Initiated before, just play
-					} else if ( this.options.initDelay > 0 ) {
-						setTimeout( this.slider.play, this.options.initDelay );
-					} else {
-						this.play(); //Didn't init before: simply init or wait for it
-					}
-				} );
-			}
-		}
-		function isHidden() {
-			const prop = this.pauseInvisible.getHiddenProp();
-			if ( ! prop ) {
-				return false;
-			}
-			return document[ prop ];
-		}
-		function getHiddenProp() {
-			const prefixes = [ 'webkit', 'moz', 'ms', 'o' ];
-			// if 'hidden' is natively supported just return it
-			if ( 'hidden' in document ) {
-				return 'hidden';
-			}
-			// otherwise loop over all the known prefixes until we find one
-			for ( let i = 0; i < prefixes.length; i++ ) {
-				if ( prefixes[ i ] + 'Hidden' in document ) {
-					return prefixes[ i ] + 'Hidden';
-				}
-			}
-			// otherwise it's not supported
-			return null;
-		}
-	}
-
-	setToClearWatchedEvent() {
+	setToClearWatchedEvent = () => {
 		clearTimeout( this.watchedEventClearTimer );
 		this.watchedEventClearTimer = setTimeout( function () {
 			this.watchedEvent = '';
 		}, 3000 );
-	}
+	};
 
 	// public methods
 	flexAnimate = function ( target, pause, override, withSync, fromNav ) {
@@ -699,9 +573,7 @@ class flexslider {
 			this.slider.atEnd = target === 0 || target === this.slider.last;
 
 			// DIRECTIONNAV:
-			if ( this.options.directionNav.bind( this.options ) ) {
-				this.directionNav.bind( methods ).update();
-			}
+			this.directionNav.update();
 
 			if ( target === this.slider.last ) {
 				// API: end() of cycle Callback
@@ -714,13 +586,13 @@ class flexslider {
 
 			// SLIDE:
 			if ( ! this.options.animation === 'fade' ) {
-				var dimension =
-						this.options.direction === 'vertical'
-							? this.slider.slides.filter( ':first' ).height()
-							: this.slider.computedW,
-					margin,
-					slideString,
-					calcNext;
+				const dimension =
+					this.options.direction === 'vertical'
+						? this.slider.slides[ 0 ].getBoundingClientRect().height
+						: this.slider.computedW;
+				let margin;
+				let slideString;
+				let calcNext;
 
 				// INFINITE LOOP / REVERSE:
 				if ( this.carousel ) {
@@ -910,20 +782,20 @@ class flexslider {
 
 	canAdvance( target, fromNav ) {
 		// ASNAV:
-		const last = asNav ? this.slider.pagingCount - 1 : this.slider.last;
+		const last = AsNav ? this.slider.pagingCount - 1 : this.slider.last;
 		return fromNav
 			? true
-			: asNav &&
+			: this.asNav &&
 			  this.slider.currentItem === this.slider.count - 1 &&
 			  target === 0 &&
 			  this.slider.direction === 'prev'
 			? true
-			: asNav &&
+			: this.asNav &&
 			  this.slider.currentItem === 0 &&
 			  target === this.slider.pagingCount - 1 &&
 			  this.slider.direction !== 'next'
 			? false
-			: target === this.slider.currentSlide && ! asNav
+			: target === this.slider.currentSlide && ! AsNav
 			? false
 			: this.options.animationLoop
 			? true
@@ -997,13 +869,13 @@ class flexslider {
 				  this.slider.move *
 				  this.slider.animatingTo;
 
+			console.log( posCheck );
+
 			return (
 				this.posCalc( pos, special, posCheck ) *
 					( this.options.rtl ? 1 : -1 ) +
 				'px'
 			);
-
-			console.log( posCheck );
 		};
 
 		if ( this.slider.transitions ) {
@@ -1049,27 +921,21 @@ class flexslider {
 			let arr;
 
 			if ( type === 'init' ) {
-				if ( this.options.manualControls === '' ) {
-					const viewport = document.createElement( 'div' );
-					viewport.classList.add( this.namespace + 'viewport' );
-					viewport.style = {
-						overflow: 'hidden',
-						position: 'relative',
-					};
-					this.slider.viewport = viewport;
-					this.slider.viewport.append( this.slider.container );
-					this.slider.append( this.slider.viewport ); // TODO: or .insertAdjacentHTML('beforeend', html)
-				} else {
-					const viewport = document.createElement( 'div' );
-					viewport.classList.add( this.namespace + 'viewport' );
-					viewport.style = {
-						overflow: 'hidden',
-						position: 'relative',
-					};
-					this.slider.viewport = viewport;
-					this.slider.viewport.prepend( this.slider.container );
-					this.slider.prepend( this.slider.viewport ); // TODO: or .insertAdjacentHTML('beforeend', html)
-				}
+				this.slider.viewport = ! this.options.manualControls
+					? document.createElement( 'div' )
+					: document.querySelector( this.options.viewport );
+
+				this.slider.viewport.classList.add(
+					this.namespace + 'viewport'
+				);
+
+				this.slider.viewport.append( this.slider.container );
+				this.slider.append( this.slider.viewport );
+
+				setStyle( this.slider.viewport, {
+					overflow: 'hidden',
+					position: 'relative',
+				} );
 
 				// INFINITE LOOP:
 				this.slider.cloneCount = 0;
@@ -1126,45 +992,44 @@ class flexslider {
 			// VERTICAL:
 			if ( this.options.direction === 'vertical' && ! this.carousel ) {
 				this.slider.viewport.style.height = this.slider.h;
-				this.slider.newSlides.forEach(
-					( slide ) =>
-						( slide.style = {
-							display: 'block',
-							width: this.slider.computedW,
-							height: this.slider.computedW,
-						} )
+				this.slider.newSlides.forEach( ( slide ) =>
+					setStyle( slide, {
+						display: 'block',
+						width: this.slider.computedW,
+						height: this.slider.computedW,
+					} )
 				);
-				this.slider.container.style = {
+				setStyle( this.slider.container, {
 					height:
 						( this.slider.count + this.slider.cloneCount ) * 200 +
 						'%',
 					position: 'absolute',
 					width: '100%',
-				};
+				} );
 				this.setProps( sliderOffset * this.slider.h, 'init' );
 			} else {
 				if ( type === 'init' )
-					this.slider.viewport.style = {
+					setStyle( this.slider.viewport, {
 						height: this.slider.h,
 						overflowX: 'hidden',
-					};
+					} );
 				Object.values( this.slider.newSlides ).forEach( ( slide ) => {
-					slide.style = {
+					setStyle( slide, {
 						width: this.slider.computedW,
 						marginRight: this.slider.computedM,
 						float: this.options.rtl ? 'right' : 'left',
 						display: 'block',
-					};
+					} );
 				} );
-				this.slider.container.style = {
+				setStyle( this.slider.container, {
 					height: '',
 					width:
 						( this.slider.count + this.slider.cloneCount ) * 200 +
 						'%',
-				};
+				} );
 				this.setProps( sliderOffset * this.slider.computedW, 'init' );
 				setTimeout(
-					function () {
+					() => {
 						// SMOOTH HEIGHT:
 						if ( this.options.smoothHeight ) {
 							this.smoothHeight();
@@ -1176,14 +1041,14 @@ class flexslider {
 		} else {
 			// FADE:
 			if ( this.options.rtl ) {
-				this.slider.slides.css( {
+				setStyle( this.slider.slides, {
 					width: '100%',
 					float: 'right',
 					marginLeft: '-100%',
 					position: 'relative',
 				} );
 			} else {
-				this.slider.slides.css( {
+				setStyle( this.slider.slides, {
 					width: '100%',
 					float: 'left',
 					marginRight: '-100%',
@@ -1194,28 +1059,26 @@ class flexslider {
 				if ( ! this.touch ) {
 					//this.slider.slides.eq(this.slider.currentSlide).fadeIn(this.options.animationSpeed, this.options.easing);
 					if ( ! this.options.fadeFirstSlide ) {
-						this.slider.slides.css( {
+						setStyle( this.slider.slides, {
 							opacity: 1,
 							display: 'block',
 							zIndex: 1,
 						} );
 					} else {
-						this.slider.slides
-							.css( {
-								opacity: 0,
-								display: 'block',
-								zIndex: 1,
-							} )
-							.eq( this.slider.currentSlide )
-							.animate(
-								{ opacity: 1 },
-								this.options.animationSpeed,
-								this.options.easing
-							);
+						setStyle( this.slider.slides, {
+							opacity: 0,
+							display: 'block',
+							zIndex: 1,
+						} );
+						this.slider.slides[ this.slider.currentSlide ].animate(
+							{ opacity: 1 },
+							this.options.animationSpeed,
+							this.options.easing
+						);
 					}
 				} else {
-					this.slider.slides
-						.css( {
+					Object.values( this.slider.slides ).forEach( ( slide ) => {
+						setStyle( slide, {
 							opacity: 0,
 							display: 'block',
 							webkitTransition:
@@ -1224,9 +1087,11 @@ class flexslider {
 									: this.options.animationSpeed / 1000 +
 									  's ease',
 							zIndex: 1,
-						} )
-						.eq( this.slider.currentSlide )
-						.css( { opacity: 1 } );
+						} );
+					} );
+					this.slider.slides[
+						this.slider.currentSlide
+					].css.opacity = 1;
 				}
 			}
 			// SMOOTH HEIGHT:
@@ -1263,7 +1128,7 @@ class flexslider {
 			this.slider.viewport === undefined
 				? sliderBBox.width
 				: this.slider.viewport.getBoundingClientRect().width;
-		// TODO: here firefox exception...but this is still needed?
+		// TODO: this is an handler for a firefox exception...but this is still needed in 2022?
 		if ( this.slider.isFirefox ) {
 			this.slider.w = sliderBBox.width;
 		}
@@ -1411,11 +1276,11 @@ class flexslider {
 
 		// remove slide
 		if ( isNaN( obj ) ) {
-			$( obj, this.slider.slides ).remove();
+			this.slider.slides.querySelector( obj ).remove();
 		} else {
 			this.options.vertical && this.options.reverse
-				? this.slider.slides.eq( this.slider.last ).remove()
-				: this.slider.slides.eq( obj ).remove();
+				? this.slider.slides[ this.slider.last ].remove()
+				: this.slider.slides[ obj ].remove();
 		}
 
 		// update currentSlide, animatingTo, controlNav, and directionNav
@@ -1423,9 +1288,8 @@ class flexslider {
 		this.slider.update( pos, 'remove' );
 
 		// update this.slider.slides
-		this.slider.slides = $(
-			this.options.selector + ':not(.clone)',
-			this.slider
+		this.slider.slides = this.slider.querySelectorAll(
+			this.options.selector + ':not(.clone)'
 		);
 		// re-setup the this.slider to accomdate new slide
 		this.slider.setup();
